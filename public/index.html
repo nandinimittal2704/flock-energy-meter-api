@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Urja Ops — Modern Grid Telemetry & Asset Dashboard</title>
+  <!-- Chart.js for telemetry time-series charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Leaflet for spatial geo-proximity mapping -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #151d30;
+      --card-border: #232f48;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --primary: #38bdf8;
+      --primary-hover: #0284c7;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --purple: #a855f7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: #111827;
+      border-bottom: 1px solid var(--card-border);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .brand { display: flex; align-items: center; gap: 0.75rem; }
+    .brand h1 { font-size: 1.25rem; font-weight: 700; color: #fff; }
+    .brand span { font-size: 0.8rem; background: rgba(56, 189, 248, 0.15); color: var(--primary); padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.3); }
+    nav { display: flex; gap: 0.5rem; }
+    .nav-btn {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--muted);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .nav-btn.active, .nav-btn:hover { background: var(--card-bg); color: #fff; border-color: var(--primary); }
+    main { flex: 1; max-width: 1400px; width: 100%; margin: 0 auto; padding: 1.5rem; }
+
+    /* Top Stats Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+    }
+    .stat-label { font-size: 0.75rem; text-transform: uppercase; tracking-wider; color: var(--muted); font-weight: 600; margin-bottom: 0.25rem; }
+    .stat-val { font-size: 1.75rem; font-weight: 700; color: #fff; }
+    .stat-sub { font-size: 0.8rem; color: var(--success); margin-top: 0.25rem; }
+
+    /* Sections */
+    .tab-section { display: none; }
+    .tab-section.active { display: block; }
+
+    .split-layout { display: grid; grid-template-columns: 350px 1fr; gap: 1.5rem; }
+    @media (max-width: 900px) { .split-layout { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 1.25rem;
+    }
+    .panel-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+
+    /* Meter list search */
+    .search-box { width: 100%; padding: 0.6rem 0.8rem; background: #0f172a; border: 1px solid var(--card-border); color: #fff; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem; }
+    .search-box:focus { outline: none; border-color: var(--primary); }
+    .meter-list { max-height: 550px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
+    .meter-item {
+      padding: 0.75rem;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      background: #0f172a;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .meter-item:hover, .meter-item.selected { border-color: var(--primary); background: rgba(56, 189, 248, 0.08); }
+    .meter-header { display: flex; justify-content: space-between; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .meter-sub { font-size: 0.75rem; color: var(--muted); display: flex; gap: 0.5rem; }
+    .badge-status { font-size: 0.7rem; padding: 0.1rem 0.4rem; border-radius: 4px; }
+    .badge-installed { background: rgba(52, 211, 153, 0.15); color: var(--success); }
+    .badge-decom { background: rgba(251, 191, 36, 0.15); color: var(--warning); }
+
+    /* Meter Detail & Chart View */
+    .detail-card { margin-bottom: 1.5rem; }
+    .nameplate-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; margin-top: 0.75rem; }
+    .np-item { background: #0f172a; padding: 0.6rem 0.8rem; border-radius: 6px; border: 1px solid var(--card-border); }
+    .np-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+    .np-val { font-size: 0.85rem; font-weight: 600; margin-top: 0.2rem; }
+    .hierarchy-breadcrumb { font-size: 0.8rem; color: var(--primary); background: #0f172a; padding: 0.5rem 0.75rem; border-radius: 6px; margin-top: 0.75rem; border: 1px solid var(--card-border); }
+
+    .chart-container { position: relative; height: 350px; width: 100%; margin-top: 1rem; }
+
+    /* Hierarchy Tree View */
+    .tree-view { font-size: 0.85rem; }
+    .tree-node { margin-left: 1rem; border-left: 1px solid var(--card-border); padding-left: 0.75rem; margin-top: 0.35rem; }
+    .tree-label { cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 4px; display: inline-block; transition: background 0.15s; }
+    .tree-label:hover { background: rgba(56, 189, 248, 0.1); color: var(--primary); }
+
+    /* Proximity Query View */
+    .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+    .btn-primary { background: var(--primary); color: #0b0f19; font-weight: 600; padding: 0.6rem 1.25rem; border: none; border-radius: 6px; cursor: pointer; transition: opacity 0.2s; }
+    .btn-primary:hover { opacity: 0.9; }
+
+    footer { text-align: center; padding: 1.5rem; color: var(--muted); font-size: 0.8rem; border-top: 1px solid var(--card-border); background: #111827; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1>Urja Meter Ops</h1>
+      <span>v1.0 • Modern Telemetry</span>
+    </div>
+    <nav>
+      <button class="nav-btn active" onclick="switchTab('tab-meters')">📊 Meter Telemetry</button>
+      <button class="nav-btn" onclick="switchTab('tab-hierarchy')">🌳 Grid Hierarchy</button>
+      <button class="nav-btn" onclick="switchTab('tab-query')">📍 Spatial & Query</button>
+      <a class="nav-btn" href="/openapi.json" target="_blank">📜 OpenAPI Spec</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Top KPI Banner -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">Total Smart Meters</span>
+        <span class="stat-val" id="stat-meters">403</span>
+        <span class="stat-sub">100% Registry In Sync</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Distribution Transformers</span>
+        <span class="stat-val" id="stat-dts">40</span>
+        <span class="stat-sub">Across 29 Feeders</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Distribution Zones</span>
+        <span class="stat-val" id="stat-zones">3</span>
+        <span class="stat-sub">7 Circles • 10 Divisions</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Service Health</span>
+        <span class="stat-val" style="color: var(--success);" id="stat-health">Healthy</span>
+        <span class="stat-sub" id="stat-uptime">Uptime: active</span>
+      </div>
+    </div>
+
+    <!-- TAB 1: Meter Telemetry Explorer -->
+    <section id="tab-meters" class="tab-section active">
+      <div class="split-layout">
+        <!-- Sidebar: Meter selection list -->
+        <div class="panel">
+          <div class="panel-title">
+            <span>Select Meter</span>
+            <span style="font-size: 0.75rem; color: var(--muted);" id="meter-count-badge">20 shown</span>
+          </div>
+          <input type="text" id="meter-search" class="search-box" placeholder="Filter meter ID or serial..." oninput="handleSearch()">
+          <div class="meter-list" id="meters-container">
+            <div style="color: var(--muted); font-size: 0.85rem;">Loading meters...</div>
+          </div>
+        </div>
+
+        <!-- Main: Telemetry Details & Chart -->
+        <div class="panel">
+          <div class="panel-title">
+            <span id="selected-meter-title">Meter Telemetry</span>
+            <span id="selected-meter-make" style="font-size: 0.8rem; color: var(--primary);"></span>
+          </div>
+
+          <!-- Nameplate Card -->
+          <div class="detail-card">
+            <div class="nameplate-grid" id="nameplate-container">
+              <div class="np-item"><div class="np-label">Meter ID</div><div class="np-val" id="np-id">-</div></div>
+              <div class="np-item"><div class="np-label">Serial Number</div><div class="np-val" id="np-serial">-</div></div>
+              <div class="np-item"><div class="np-label">Phase Type</div><div class="np-val" id="np-phase">-</div></div>
+              <div class="np-item"><div class="np-label">Install Status</div><div class="np-val" id="np-status">-</div></div>
+              <div class="np-item"><div class="np-label">GPS Coordinates</div><div class="np-val" id="np-geo">-</div></div>
+              <div class="np-item"><div class="np-label">Connected DT</div><div class="np-val" id="np-dt">-</div></div>
+            </div>
+            <div class="hierarchy-breadcrumb" id="np-hierarchy">Hierarchy: Select a meter to view network path</div>
+          </div>
+
+          <!-- Telemetry Consumption Chart -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
+            <h3 style="font-size: 0.95rem; font-weight: 600;">30-Minute Interval Energy & Voltage Profile</h3>
+            <span id="consumption-stats" style="font-size: 0.8rem; color: var(--success);"></span>
+          </div>
+          <div class="chart-container">
+            <canvas id="telemetryChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: Grid Hierarchy Explorer -->
+    <section id="tab-hierarchy" class="tab-section">
+      <div class="panel">
+        <div class="panel-title">
+          <span>7-Tier Electricity Distribution Network Hierarchy</span>
+          <span style="font-size: 0.8rem; color: var(--muted);">Click any node to expand assets</span>
+        </div>
+        <div id="hierarchy-tree-container" class="tree-view">
+          Loading distribution hierarchy...
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: Spatial Proximity & Advanced Query -->
+    <section id="tab-query" class="tab-section">
+      <div class="panel">
+        <div class="panel-title">
+          <span>Multi-Attribute Query & Spatial Proximity Search</span>
+        </div>
+        <div class="filter-grid">
+          <div>
+            <label style="font-size: 0.75rem; color: var(--muted);">Center Latitude</label>
+            <input type="number" step="0.0001" id="q-lat" class="search-box" value="26.9389">
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; color: var(--muted);">Center Longitude</label>
+            <input type="number" step="0.0001" id="q-lng" class="search-box" value="75.8309">
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; color: var(--muted);">Radius (km)</label>
+            <input type="number" id="q-dist" class="search-box" value="5">
+          </div>
+          <div>
+            <label style="font-size: 0.75rem; color: var(--muted);">Phase Type</label>
+            <select id="q-phase" class="search-box">
+              <option value="">Any Phase</option>
+              <option value="single">Single Phase</option>
+              <option value="three">Three Phase</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn-primary" onclick="runProximityQuery()">Run Spatial Query</button>
+
+        <div id="spatial-map" style="height: 380px; width: 100%; border-radius: 8px; margin-top: 1.25rem; border: 1px solid var(--card-border); display: none;"></div>
+
+        <div style="margin-top: 1.5rem;" id="query-results-container">
+          <p style="color: var(--muted); font-size: 0.85rem;">Click 'Run Spatial Query' to search meters within radius.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Urja Meter Ops Modern Web Client • Built on Flock Energy Legacy Portal API Service
+  </footer>
+
+  <script>
+    let currentChart = null;
+    let allMetersList = [];
+
+    // Tab switcher
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-section').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      event.target.classList.add('active');
+
+      if (tabId === 'tab-hierarchy' && !window.hierarchyLoaded) {
+        loadHierarchy();
+      }
+    }
+
+    // Initial load
+    window.addEventListener('DOMContentLoaded', async () => {
+      loadHealth();
+      await loadMeters();
+      if (allMetersList.length > 0) {
+        selectMeter(allMetersList[0].meterId);
+      }
+    });
+
+    async function loadHealth() {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        document.getElementById('stat-uptime').innerText = `Uptime: ${Math.round(data.uptime)}s`;
+      } catch (e) {
+        document.getElementById('stat-health').innerText = 'Offline';
+      }
+    }
+
+    async function loadMeters(q = '') {
+      try {
+        const res = await fetch(`/api/meters?q=${encodeURIComponent(q)}&page=1`);
+        const result = await res.json();
+        allMetersList = result.data || [];
+        document.getElementById('meter-count-badge').innerText = `${result.data.length} of ${result.pagination.total}`;
+        renderMeterList(allMetersList);
+      } catch (err) {
+        console.error('Failed to load meters', err);
+      }
+    }
+
+    function renderMeterList(meters) {
+      const container = document.getElementById('meters-container');
+      container.innerHTML = '';
+      meters.forEach((m, idx) => {
+        const item = document.createElement('div');
+        item.className = 'meter-item' + (idx === 0 ? ' selected' : '');
+        item.onclick = () => {
+          document.querySelectorAll('.meter-item').forEach(el => el.classList.remove('selected'));
+          item.classList.add('selected');
+          selectMeter(m.meterId);
+        };
+        const statusClass = m.installStatus.toLowerCase() === 'installed' ? 'badge-installed' : 'badge-decom';
+        item.innerHTML = `
+          <div class="meter-header">
+            <span>${m.meterId}</span>
+            <span class="badge-status ${statusClass}">${m.installStatus}</span>
+          </div>
+          <div class="meter-sub">
+            <span>SN: ${m.serialNo}</span>
+            <span>•</span>
+            <span>${m.make}</span>
+            <span>•</span>
+            <span>${m.phaseType}</span>
+          </div>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    let searchTimeout = null;
+    function handleSearch() {
+      clearTimeout(searchTimeout);
+      const val = document.getElementById('meter-search').value;
+      searchTimeout = setTimeout(() => loadMeters(val), 250);
+    }
+
+    async function selectMeter(meterId) {
+      document.getElementById('selected-meter-title').innerText = `Meter ${meterId}`;
+
+      // 1. Fetch meter detail
+      try {
+        const detailRes = await fetch(`/api/meters/${meterId}`);
+        const detailData = (await detailRes.json()).data;
+
+        document.getElementById('np-id').innerText = detailData.meterId;
+        document.getElementById('np-serial').innerText = detailData.serialNo;
+        document.getElementById('np-phase').innerText = detailData.phaseType;
+        document.getElementById('np-status').innerText = detailData.installStatus;
+        document.getElementById('np-geo').innerText = detailData.geo ? `${detailData.geo.latitude.toFixed(4)}, ${detailData.geo.longitude.toFixed(4)}` : 'N/A';
+        document.getElementById('selected-meter-make').innerText = `${detailData.make} (${detailData.installType})`;
+
+        const h = detailData.hierarchy || {};
+        const path = [h.zone?.name, h.circle?.name, h.division?.name, h.feeder?.name, h.dt?.name].filter(Boolean).join(' › ');
+        document.getElementById('np-hierarchy').innerText = `Grid Path: ${path || 'Direct'}`;
+        document.getElementById('np-dt').innerText = h.dt?.name || detailData.dtCode || 'N/A';
+      } catch (e) {
+        console.error('Failed to load meter detail', e);
+      }
+
+      // 2. Fetch consumption telemetry
+      try {
+        const energyRes = await fetch(`/api/meters/${meterId}/consumption?limit=48`);
+        const energyData = (await energyRes.json()).data;
+        const readings = energyData.readings || [];
+        const summary = energyData.summary;
+
+        if (summary) {
+          document.getElementById('consumption-stats').innerText =
+            `Consumed: ${summary.activeEnergyKwh.totalConsumed ?? '—'} kWh | Avg Voltage: ${summary.voltageStats.avg ?? '—'} V`;
+        } else {
+          document.getElementById('consumption-stats').innerText = `${readings.length} readings loaded`;
+        }
+
+        renderTelemetryChart(readings);
+      } catch (e) {
+        console.error('Failed to load consumption telemetry', e);
+      }
+    }
+
+    function renderTelemetryChart(readings) {
+      const ctx = document.getElementById('telemetryChart').getContext('2d');
+      if (currentChart) currentChart.destroy();
+
+      const labels = readings.map(r => r.timestamp.split(' ')[1] || r.timestamp);
+      const kwhData = readings.map(r => r.kwh);
+      const voltageData = readings.map(r => r.voltageR);
+
+      currentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Active Energy (kWh)',
+              data: kwhData,
+              borderColor: '#38bdf8',
+              backgroundColor: 'rgba(56, 189, 248, 0.1)',
+              yAxisID: 'yKwh',
+              tension: 0.3,
+              fill: true,
+            },
+            {
+              label: 'Voltage (V)',
+              data: voltageData,
+              borderColor: '#a855f7',
+              backgroundColor: 'transparent',
+              yAxisID: 'yVolt',
+              borderDash: [4, 4],
+              tension: 0.3,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: {
+              grid: { color: '#232f48' },
+              ticks: { color: '#94a3b8', maxTicksLimit: 12 }
+            },
+            yKwh: {
+              type: 'linear',
+              position: 'left',
+              grid: { color: '#232f48' },
+              ticks: { color: '#38bdf8' }
+            },
+            yVolt: {
+              type: 'linear',
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: { color: '#a855f7' },
+              suggestedMin: 210,
+              suggestedMax: 250
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#f1f5f9' } }
+          }
+        }
+      });
+    }
+
+    async function loadHierarchy() {
+      window.hierarchyLoaded = true;
+      const container = document.getElementById('hierarchy-tree-container');
+      try {
+        const res = await fetch('/api/network');
+        const { data } = await res.json();
+        let html = '';
+        data.zones.forEach(z => {
+          html += `<div style="margin-bottom: 0.75rem;">
+            <strong style="color: var(--primary);">⚡ Zone: ${z.name} (${z.code}) — ${z.meterCount} meters</strong>`;
+          (z.children || []).forEach(c => {
+            html += `<div class="tree-node"><span class="tree-label">⭕ Circle: ${c.name} (${c.meterCount} meters)</span>`;
+            (c.children || []).forEach(d => {
+              html += `<div class="tree-node"><span class="tree-label">🏢 Division: ${d.name} (${d.meterCount} meters)</span>`;
+              (d.children || []).forEach(sd => {
+                html += `<div class="tree-node"><span class="tree-label">📍 Substation: ${sd.name}</span>`;
+                (sd.children || []).forEach(f => {
+                  html += `<div class="tree-node"><span class="tree-label">🔌 Feeder: ${f.name} (${f.code})</span>`;
+                  (f.children || []).forEach(dt => {
+                    html += `<div class="tree-node"><span class="tree-label" style="color: var(--warning);">⚡ DT: ${dt.name} (${dt.capacityKva ? dt.capacityKva + ' kVA, ' : ''}${dt.meterCount} meters)</span></div>`;
+                  });
+                  html += `</div>`;
+                });
+                html += `</div>`;
+              });
+              html += `</div>`;
+            });
+            html += `</div>`;
+          });
+          html += `</div>`;
+        });
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = '<span style="color: red;">Failed to load network hierarchy</span>';
+      }
+    }
+
+    let leafletMap = null;
+    let mapMarkerLayer = null;
+
+    async function runProximityQuery() {
+      const lat = parseFloat(document.getElementById('q-lat').value);
+      const lng = parseFloat(document.getElementById('q-lng').value);
+      const dist = parseFloat(document.getElementById('q-dist').value);
+      const phase = document.getElementById('q-phase').value;
+      const container = document.getElementById('query-results-container');
+      const mapEl = document.getElementById('spatial-map');
+
+      container.innerHTML = 'Searching meters...';
+      try {
+        let url = `/api/meters/query?nearLat=${lat}&nearLng=${lng}&maxDistanceKm=${dist}`;
+        if (phase) url += `&phaseType=${phase}`;
+
+        const res = await fetch(url);
+        const { data, pagination } = await res.json();
+
+        if (!data || data.length === 0) {
+          container.innerHTML = '<p style="color: var(--muted);">No meters found within this radius.</p>';
+          if (mapEl) mapEl.style.display = 'none';
+          return;
+        }
+
+        // Render Leaflet Map if available
+        if (typeof window.L !== 'undefined') {
+          mapEl.style.display = 'block';
+          if (!leafletMap) {
+            leafletMap = L.map('spatial-map').setView([lat, lng], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '© OpenStreetMap contributors',
+              maxZoom: 18,
+            }).addTo(leafletMap);
+            mapMarkerLayer = L.layerGroup().addTo(leafletMap);
+          } else {
+            leafletMap.setView([lat, lng], 13);
+            mapMarkerLayer.clearLayers();
+          }
+
+          // Center search circle
+          L.circle([lat, lng], {
+            radius: dist * 1000,
+            color: '#38bdf8',
+            fillColor: '#38bdf8',
+            fillOpacity: 0.12,
+            weight: 2
+          }).addTo(mapMarkerLayer).bindPopup(`Search Center (${dist} km radius)`);
+
+          // Meter pins
+          data.forEach(m => {
+            if (m.coordinates && typeof m.coordinates.latitude === 'number') {
+              L.circleMarker([m.coordinates.latitude, m.coordinates.longitude], {
+                radius: 6,
+                color: '#34d399',
+                fillColor: '#34d399',
+                fillOpacity: 0.85,
+                weight: 1
+              }).addTo(mapMarkerLayer).bindPopup(`<b>Meter: ${m.meterId}</b><br>Make: ${m.make}<br>Phase: ${m.phaseType}<br>Distance: ${m.distanceKm} km`);
+            }
+          });
+
+          setTimeout(() => leafletMap.invalidateSize(), 150);
+        }
+
+        let html = `<p style="color: var(--success); margin-bottom: 0.75rem; font-size: 0.85rem;">Found ${pagination.total} meters within ${dist} km (sorted by distance):</p>`;
+        html += '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem;">';
+        data.forEach(m => {
+          html += `
+            <div class="panel" style="padding: 0.75rem; font-size: 0.85rem; border-color: var(--card-border);">
+              <div style="display: flex; justify-content: space-between; font-weight: 600;">
+                <span>${m.meterId}</span>
+                <span style="color: var(--primary);">${m.distanceKm} km away</span>
+              </div>
+              <div style="font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem;">
+                ${m.make} • ${m.phaseType} • ${m.installStatus}
+              </div>
+              <div style="font-size: 0.75rem; color: var(--muted); margin-top: 0.25rem;">
+                Coords: ${m.coordinates.latitude.toFixed(4)}, ${m.coordinates.longitude.toFixed(4)}
+              </div>
+            </div>
+          `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+      } catch (e) {
+        container.innerHTML = '<span style="color: red;">Failed to run query</span>';
+      }
+    }
+  </script>
+</body>
+</html>

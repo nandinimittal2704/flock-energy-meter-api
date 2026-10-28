@@ -517,7 +517,7 @@ The application is structured as a standard Node.js service that binds to `proce
    - `PORTAL_TIMEOUT_MS`: `10000`
    - `PORTAL_MAX_RETRIES`: `2`
 
-Hosted Service URL: *(Configured upon deployment in Phase 6)*
+Hosted Service URL: https://flock-energy-meter-api.onrender.com/
 
 ---
 

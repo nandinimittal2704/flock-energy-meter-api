@@ -109,6 +109,7 @@ cp .env.example .env
 Edit `.env` with your Urja portal credentials:
 ```ini
 PORT=3000
+HOST=0.0.0.0
 NODE_ENV=development
 LOG_LEVEL=info
 

@@ -2,7 +2,9 @@ import { app } from "./app.js";
 import { env } from "./config/env.js";
 import { logger } from "./utils/logger.js";
 
-const host = env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1";
+// In production (e.g. Render/cloud containers), always bind to 0.0.0.0.
+// In development, default to env.HOST (0.0.0.0) while allowing custom overrides.
+const host = env.NODE_ENV === "production" ? "0.0.0.0" : env.HOST;
 
 const server = app.listen(env.PORT, host, () => {
   logger.info(
